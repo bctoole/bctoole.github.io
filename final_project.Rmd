@@ -1,0 +1,239 @@
+---
+title: "Final_Project"
+author: "Bryce Toole"
+date: "May 22, 2019"
+output: html_document
+---
+## Introduction
+Cardiovascular disease is the leading cause of death in men and women in the United States. Therefore, prevention and early detection is very important to keep people alive and healthy. We can try and predict likeliness some one has it and hopefully use that information to help them. The dataset we'll be using can be found here: https://www.kaggle.com/sulianova/cardiovascular-disease-dataset
+It is a combination of Objective (Age, weight, etc.), Examination (Blood pressure), and Subjective (Smoke, alcohol) information. Hopefully by the end we will have some understanding of factors affecting cardiovascular disease. You can read more about cardiovascular disease, and its widespread affects here: https://www.cdc.gov/heartdisease/facts.htm
+
+## Data Curation and parsing
+Load the data using the read_delim function that uses ';' as delimiters
+```{r message=FALSE}
+library(tidyverse)
+cardio_df <- read_delim("cardio_train.csv", delim =";")
+head(cardio_df)
+```
+
+Looking at the data, we want to have a better understanding of what each column means, so lets rename and make a column for years. Also having gender as 0 for female and 1 for male will make analysis easier for our purposes. This is all done pretty easily using setnames for renaming columns and mutate to create a new one.
+
+```{r}
+data.table::setnames(cardio_df, old=c("age","height", "weight" ), new=c("age_days","height_cm", "weight_kg"), skip_absent=TRUE)
+cardio_df <- mutate(cardio_df, age_years = round(age_days/365, 2))
+cardio_df$gender <- cardio_df$gender - 1
+head(cardio_df)
+```
+Also, I have noticed the age range has an outlier of 4 people being younger than 31 and everyone else being older than 35 so lets remove those units so that our buckets can be more compact and everything looks "nicer".
+
+```{r}
+cardio_df <- cardio_df[cardio_df$age_years > 31,]
+```
+
+and lastly, its important to note the other variables and what they represent:
+
+ap_hi: Systolic blood pressure
+
+ap_lo: Diastolic blood pressure
+
+cholesterol: 1-normal, 2-above normal, 3-well above normal
+
+gluc: 1-normal, 2-above normal, 3-well above normal
+
+the three subjective categories: smoke, alco, active are true/false
+
+cardio: target variable, 1 if patient has cardiovascular disease.
+
+##Exploratory Data Analysis
+Lets run some summary statistics:
+```{r}
+summarize(cardio_df, mean(age_years), mean(gender), mean(cardio))
+fivenum(cardio_df$age_years)
+```
+
+We can see the mean age of our data set is about 53 years old, the proportion is about 35% male, and almost half our data has cardiovascular disease. We also see the range in age is 39-65 year old.
+
+Now lets visualize the relationship between age, gender, and presence of cardiovascular disease. We can group age in discrete bins, lets say 2.5 year intervals, and then find the proportion of men/women in those groups who have cardiovascular disease. We also want to separate the groups based on gender as that may have an impact and it can be very easily completed with the filter function. Also each "%>%" represents a pipeline, which takes the output of what is before (usully a data frame) and inserts it as the first argument of the next function. 
+
+In order to find the proportion of those with cardiovascular disease using the summarize function and finding the mean of the cardio value which will be the number of 1s divided by the total number of entities which works out to be the proprotion.
+
+lastly, in order to visualize this data, we can merge them back to one table, and plot each proportion per age group vs age group and do that for both genders. I decided to use a line graph vs bar graph because although the independent variable is categorical, it still helps to visualize it in a somewhat continuous way. We also can discretized into smaller buckets, making a more accurate graph for in between the points, but then we may increase the variance per bucket as the number of people per bucket decreases.
+
+```{r}
+buckets = c(39,42.5,45,47.5,50,52.5,55,57.5,60,62.5,65)
+
+
+
+female_group <- 
+  cardio_df %>%
+  filter(gender == 0) %>%
+  mutate(age_group = cut(age_years, breaks=buckets)) %>%
+  group_by(age_group) %>%
+  summarize(card_mean = mean(cardio))%>%
+  mutate(gender="FEMALE")
+
+male_group <- 
+  cardio_df %>%
+  filter(gender == 1) %>%
+  mutate(age_group = cut(age_years, breaks=buckets)) %>%
+  group_by(age_group) %>%
+  summarize(card_mean = mean(cardio)) %>%
+  mutate(gender = "MALE")
+
+merge(male_group, female_group, all = TRUE) %>%
+  ggplot(mapping = aes(x=age_group, y=card_mean, group=gender)) + 
+    geom_line(aes(color=factor(gender))) +
+    geom_point()
+```
+
+From the plot we can see how before 55, men have a higher proportion of cardiovascular disease than women, while women have a slightly higher proportion after 57.5. Also we see how age is correlated with cardiovascular disease and that after about 55, the proportion of those in the study were more likely to have cardiovascular disease than not.
+
+We can also plot charts of the categorical variables to see if they have any affect. We use the same method of pipelining data into group_by, summarize, and ggplot
+
+```{r}
+cardio_df %>%
+  group_by(gluc) %>%
+  summarize(prop_cardio = mean(cardio)) %>%
+  ggplot(mapping=aes(x=factor(gluc), y=prop_cardio)) +
+  geom_bar(stat="identity")
+cardio_df %>%
+  group_by(cholesterol) %>%
+  summarize(prop_cardio = mean(cardio)) %>%
+  ggplot(mapping=aes(x=factor(cholesterol), y=prop_cardio)) +
+  geom_bar(stat="identity")
+cardio_df %>%
+  group_by(alco) %>%
+  summarize(prop_cardio = mean(cardio)) %>%
+  ggplot(mapping=aes(x=factor(alco), y=prop_cardio)) +
+  geom_bar(stat="identity")
+cardio_df %>%
+  group_by(smoke) %>%
+  summarize(prop_cardio = mean(cardio)) %>%
+  ggplot(mapping=aes(x=factor(smoke), y=prop_cardio)) +
+  geom_bar(stat="identity")
+cardio_df %>%
+  group_by(active) %>%
+  summarize(prop_cardio = mean(cardio)) %>%
+  ggplot(mapping=aes(x=factor(active), y=prop_cardio)) +
+  geom_bar(stat="identity")
+```
+
+The cholesterol and glucose had a clear positive correlation with having cardiovascular disease, meanwhile smoking, alcohol, and activity had a slight negative relation. This may be confusing as according to https://ada.com/cardiovascular-disease-risk-factors/, both smoking and drinking would increase the likeliness of cardiovascular disease. This may be explained by the way the patients were sampled, incorrect self reporting, or other confounding variables.
+
+
+##Hypothesis testing
+Before we create a model, we don't want to waste time including a variable that doesn't affect our target so lets figure out what variables, if any, we can exclude. We can do this by testing a null hypothesis that a variable does not impact the likelihood of getting cardiovascular disease against the alternative that it does have an impact. We can fit a linear model to each of the variables and see if there are statistically significant relationships but first, lets add a BMI category and use that over height and weight in our model.
+
+```{r}
+library(broom)
+selected_cardio <- cardio_df %>%
+  mutate(BMI = weight_kg / ((height_cm / 100)^2)) %>%
+  select(-weight_kg, -height_cm, -id, -age_days)
+
+selected_cardio
+
+cardio_fit <- lm(cardio~., data=selected_cardio) 
+cardio_fit %>%
+  tidy()
+```
+
+After examining the p-value for each of the variables, we can see that all of them have a p <.05 so we can include each of them in our model and see if we can accurately predict cardiovascular disease.
+
+
+
+##Machine learning
+
+For this portion we will use a random forest to figure out the classification problem. Our training data and prediction data will need to be kept separate so we can use 10 fold cross verification where we divide the data in 10 groups, and for each group we use the other data to create the model and test how accurate the model is on the prediction group. We also need to decide how many trees to will be in our random forest, and for more fun we can compare the difference between using 10 trees and 500 trees in our forest and see how much of an impact it will have. 
+
+In order to partition our data we can use caret::createFolds, which will give us a list of length 10 dividing the indices of our data into equal sized groups.
+
+Also in order to actually train our model, we will use the caret package. the train fuction takes care of pretty much everything we will need
+
+```{r}
+library(caret)
+
+selected_cardio <- mutate(selected_cardio, cardio = factor(cardio, levels =c(0, 1), labels= c("NO", "YES")))
+
+
+set.seed(3333)
+cv_partition <- createFolds(selected_cardio$cardio, k=10)
+
+fit_control <- trainControl(
+    method = "cv",
+    number = 10,
+    indexOut = cv_partition,
+    summaryFunctio=twoClassSummary,
+    classProbs = TRUE,
+    savePredictions = TRUE)
+
+small_rf_fit <- train(cardio~., 
+                      data = selected_cardio,
+                      method = "rf",
+                      ntree = 10,
+                      trControl = fit_control,
+                      metric = "ROC")
+
+big_rf_fit <- train(cardio~., 
+                      data = selected_cardio,
+                      method = "rf",
+                      ntree = 500,
+                      trControl = fit_control,
+                      metric = "ROC")
+```
+
+Now we have the big and small random forests. By the way, this code took over an hour to run because of the size of the data set and number of trees, so if you dont want to spend so much time on it, only do the small random forest which takes a minute or so. Or you can do the big one and go get lunch, your call.
+
+
+```{r}
+show(small_rf_fit)
+show(big_rf_fit)
+```
+Here we can see the results of both models. mtry represents the number of variables randomly sampled as candidates for each split in the tree. So for either 10 or 500 trees, 10 was the optimal number using our measuring statistic: ROC. The ROC represents the area under the ROC curve which measures the true positive rate against the false positive rate. For this experiment, the true positive rate, or sensitivity, represents the total number of correct diagnosis of cardiovascular disease divided by everyone with cardiovascular disease (IE does our model say YES enough?) The false positive rate, or 1-specifity, is the number of people we incorrectly diagnose, divided by the number of people who do not have cardiovascular disease (IE does our model say YES too much?). In the end, we see a much more dramatic increase in the specifity by increasing mtry which allows to be more confident in our model being correct.
+
+
+We can compare each models AUROC using caret::resamples pretty easily. This value gives us the probability that our model will rank a random patient with cardiovascular disease higher than a random patient without. 
+
+```{r}
+auroc <- resamples(list(small = small_rf_fit, big=big_rf_fit))
+ggplot(auroc) + labs(title="AUROC", x="Forest Size", y="AUROC")
+```
+
+We see disjoint intervals for the AUROC value which most likely indicates the increase is statistically significant, but lets formally test it with linear regression.
+
+```{r}
+compare_auroc <- auroc %>%
+  as_tibble() %>%
+  gather("model", "roc", -Resample) %>%
+  mutate(model=factor(model, levels=c("small","big")))
+
+compare_auroc %>% 
+  lm(roc~model, data=.) %>%
+  tidy()
+```
+
+We can see that the big rf tree performs better at a statistically significant level, however, the amount it improved was ~.006. Because we specifically wanted to compare the differences in the sizes of the random forests, it was important to run both but in a different case, it would make sense to run the smaller forest first. Thus, we could see that the smaller model worked pretty well, and we could increase the size in smaller increments to get a good but also much faster model.
+
+
+
+We can also look at the ROC curves themseves to see the difference visually. This is also easily done using the plotROC library and geom_roc function. We want to filter mtry == 10 for both forests as that was the optimal value for the most accurate model.
+```{r}
+library(plotROC)
+
+roc_curve <- 
+  big_rf_fit$pred %>%
+  filter(mtry==10)%>%
+  mutate(model="big") %>%
+  bind_rows(small_rf_fit$pred %>%
+              filter(mtry==10)%>%
+              mutate(model= "small"))
+
+roc_curve %>%
+  ggplot(aes(m=YES,
+             d=factor(obs, levels=c("YES","NO")),
+             color=model)) +
+  geom_roc(n.cuts=0) + 
+  coord_equal() +
+  style_roc()
+```
+
+We can see both models do fairly well in predicting whether a patient has cardiovascular disease based on the factors presented. The larger forest is able to get ovor a 95% true positive rate with less than a 5% false positive rate. Some things to remember though is that, depending on how this data was collected, it may not extend to the population of all humans, but hopefully the cross-verification can give us confidence in how valid the model is.
